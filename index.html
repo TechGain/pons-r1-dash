@@ -84,8 +84,7 @@ async function load() {
       const r = await fetch(src + (src.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache: "no-store" });
       if (!r.ok) { err = src + " " + r.status; continue; }
       const j = await r.json();
-      payload = j.content ? JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/
-/g, ""))))) : j;
+      payload = j.content ? JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g, ""))))) : j;
       if (payload && payload.alerts) break;
       payload = null;
     } catch (e) { err = src + " " + e; }
