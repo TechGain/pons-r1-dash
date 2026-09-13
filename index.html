@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>R1 Alerts</title>
+<style>
+  :root { --bg:#0e1116; --card:#171b23; --line:#262c38; --text:#e8ecf3; --muted:#8a93a6; --green:#35c26f; --red:#e5534b; --amber:#e0a530; --blue:#5aa2ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding:12px 14px 40px; }
+  header { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:6px; }
+  h1 { font-size:20px; margin:0; letter-spacing:.2px; }
+  .sub { color:var(--muted); font-size:12.5px; }
+  .rule { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; font-size:13px; color:var(--muted); margin:10px 0 14px; }
+  .rule b { color:var(--text); }
+  .filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .filters button { background:var(--card); color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:5px 11px; font-size:13px; }
+  .filters button.on { color:var(--text); border-color:var(--blue); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 13px; margin-bottom:10px; }
+  .top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+  .tick { font-size:18px; font-weight:700; }
+  .name { color:var(--muted); font-size:12.5px; }
+  .badge { font-size:11.5px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+  .OPEN { background:#153b26; color:var(--green); } .TARGET_HIT { background:#123a5c; color:var(--blue); } .EXPIRED { background:#3a2a12; color:var(--amber); } .NO_ENTRY_YET { background:#2a2f3a; color:var(--muted); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:6px 12px; margin:10px 0 6px; font-size:13.5px; }
+  .k { color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.4px; }
+  .v { font-variant-numeric:tabular-nums; }
+  .up { color:var(--green); } .down { color:var(--red); }
+  .why { font-size:13px; color:var(--muted); margin:6px 0; }
+  .why span { display:inline-block; background:#1f2430; border-radius:6px; padding:2px 7px; margin:2px 4px 2px 0; color:var(--text); }
+  .action { font-size:13.5px; margin:6px 0 8px; padding:8px 10px; border-left:3px solid var(--amber); background:#1c1a14; border-radius:6px; }
+  .links { display:flex; gap:8px; flex-wrap:wrap; }
+  .links a, .links button { background:#20263a; color:var(--text); text-decoration:none; border:1px solid var(--line); border-radius:9px; padding:7px 11px; font-size:13.5px; }
+  .chart { margin-top:10px; border-radius:10px; overflow:hidden; border:1px solid var(--line); aspect-ratio:1/1.1; max-width:100%; }
+  .chart iframe { width:100%; height:100%; border:0; }
+  .foot { color:var(--muted); font-size:12px; margin-top:14px; }
+  .warn { color:var(--amber); }
+  .empty { color:var(--muted); padding:30px 0; text-align:center; }
+</style>
+</head>
+<body>
+<header><h1>R1 alerts</h1><div class="sub" id="upd">loading…</div></header>
+<div class="rule" id="rule"></div>
+<div class="filters" id="filters"></div>
+<div id="list"><div class="empty">loading alerts…</div></div>
+<div class="foot" id="foot"></div>
+<script>
+const API = "https://api.github.com/repos/TechGain/pons-r1-dash/contents/alerts.json?ref=main";
+const RAW = "alerts.json";
+let data = null, filter = "ALL", open = {};
+const LA = "America/Los_Angeles";
+function fmt(ts, opts) { return ts ? new Date(ts * 1000).toLocaleString("en-US", Object.assign({ timeZone: LA, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }, opts || {})) : "—"; }
+function money(x, d) { if (x == null) return "—"; if (x >= 1e6) return "$" + (x / 1e6).toFixed(2) + "M"; if (x >= 1e3) return "$" + (x / 1e3).toFixed(0) + "k"; return "$" + x.toFixed(d == null ? 0 : d); }
+function price(x) { if (x == null) return "—"; return "$" + (x < 0.001 ? x.toExponential(2) : x.toPrecision(3)); }
+function ago(ts) { if (!ts) return ""; const s = Math.max(0, Date.now() / 1000 - ts); if (s < 90) return Math.round(s) + " s ago"; if (s < 5400) return Math.round(s / 60) + " min ago"; if (s < 172800) return (s / 3600).toFixed(1) + " h ago"; return (s / 86400).toFixed(1) + " d ago"; }
+function left(ts) { const s = ts - Date.now() / 1000; if (s <= 0) return "passed"; if (s < 3600) return Math.round(s / 60) + " min left"; return (s / 3600).toFixed(1) + " h left"; }
+async function load() {
+  let payload = null;
+  try { const r = await fetch(API, { cache: "no-store" }); if (r.ok) { const j = await r.json(); payload = JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g, ""))))); } } catch (e) {}
+  if (!payload) { try { const r = await fetch(RAW + "?t=" + Date.now(), { cache: "no-store" }); if (r.ok) payload = await r.json(); } catch (e) {} }
+  if (!payload) { document.getElementById("upd").textContent = "could not load data"; return; }
+  data = payload; render();
+}
+function render() {
+  const a = data.alerts || [];
+  document.getElementById("upd").textContent = "data " + ago(data.generated_ts) + " · " + a.length + " R1 of " + data.n_live + " live crossings";
+  document.getElementById("rule").innerHTML = "<b>Rule.</b> " + data.rule + "<br><b>Track record.</b> " + data.history;
+  const counts = { ALL: a.length };
+  a.forEach(x => counts[x.status] = (counts[x.status] || 0) + 1);
+  document.getElementById("filters").innerHTML = Object.keys(counts).map(k => `<button class="${filter === k ? "on" : ""}" onclick="filter='${k}';render()">${k.toLowerCase()} ${counts[k]}</button>`).join("");
+  const rows = a.filter(x => filter === "ALL" || x.status === filter);
+  document.getElementById("list").innerHTML = rows.length ? rows.map(card).join("") : '<div class="empty">no alerts in this view</div>';
+  document.getElementById("foot").innerHTML = "Times are Los Angeles. Market caps use the full 1B supply (burns ignored). Alert lag is the delay between the on-chain crossing and the alert; the registered entry is 60 s after the alert, so a lag over a few minutes is a different trade than the one being tested." + (data.generated_ts && Date.now() / 1000 - data.generated_ts > 600 ? ' <span class="warn">Data is more than 10 minutes old: the publisher on the PC may be down.</span>' : "");
+}
+function card(x) {
+  const cls = x.status.replace(/ /g, "_");
+  const m = x.mult;
+  const mstr = m == null ? "—" : `<span class="${m >= 1 ? "up" : "down"}">${m.toFixed(2)}x</span>`;
+  const why = [`graduated in ${x.grad_min == null ? "?" : x.grad_min.toFixed(0)} min (rule: 10–60)`, `launched ${x.launch_hour == null ? "?" : x.launch_hour + ":00"} LA (rule: 7 AM–4:59 PM)`, `crossed $100k at ${money(x.cross_mcap)}`, `alert lag ${x.lag_s == null ? "?" : Math.round(x.lag_s) + " s"}`, `${x.prior_launches == null ? "?" : x.prior_launches} prior launches by the deployer`];
+  const chart = open[x.token] ? `<div class="chart"><iframe src="https://dexscreener.com/robinhood/${x.token}?embed=1&theme=dark&info=0" loading="lazy" allowfullscreen></iframe></div>` : "";
+  return `<div class="card">
+    <div class="top"><div><div class="tick">${esc(x.symbol || "?")}</div><div class="name">${esc(x.name || "")} · alert ${fmt(x.alert_ts)} (${ago(x.alert_ts)})</div></div><div class="badge ${cls}">${x.status}</div></div>
+    <div class="grid">
+      <div><div class="k">entry (alert + 60 s)</div><div class="v">${price(x.entry_price)} · ${money(x.entry_mcap)}</div></div>
+      <div><div class="k">now</div><div class="v">${price(x.cur_price)} · ${money(x.cur_mcap)} ${mstr}</div></div>
+      <div><div class="k">3x target</div><div class="v">${price(x.target_price)} · ${money(x.entry_mcap ? x.entry_mcap * 3 : null)}</div></div>
+      <div><div class="k">deadline (72 h)</div><div class="v">${fmt(x.deadline_ts)} · ${left(x.deadline_ts)}</div></div>
+      <div><div class="k">peak since entry</div><div class="v">${x.peak_mult == null ? "—" : x.peak_mult.toFixed(2) + "x"}</div></div>
+      <div><div class="k">pool depth</div><div class="v">${money(x.depth_usd)}</div></div>
+    </div>
+    <div class="why">${why.map(w => "<span>" + esc(w) + "</span>").join("")}</div>
+    <div class="action">${esc(x.action)}</div>
+    <div class="links"><a href="${x.dexscreener}" target="_blank" rel="noopener">Dexscreener</a><a href="${x.pons}" target="_blank" rel="noopener">Pons</a><button onclick="toggle('${x.token}')">${open[x.token] ? "hide chart" : "chart"}</button><button onclick="navigator.clipboard.writeText('${x.token}');this.textContent='copied'">copy address</button></div>
+    ${chart}
+  </div>`;
+}
+function toggle(t) { open[t] = !open[t]; render(); }
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+load(); setInterval(load, 60000);
+</script>
+</body>
+</html>
