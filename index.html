@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>R1 Alerts</title>
+<title>Pons Alerts</title>
 <style>
   :root { --bg:#0b0e13; --card:#141923; --card2:#1a2030; --line:#232b3a; --text:#eef2f8; --muted:#8b95a9; --dim:#5d6678;
           --green:#2ecc71; --green-bg:#0f2a1c; --blue:#4c9dff; --blue-bg:#0f2340; --amber:#f0b03a; --amber-bg:#2c2110; --red:#ff5c5c; --red-bg:#2c1414; --grey:#6b7385; --grey-bg:#1c212c; --violet:#b48cff; --violet-bg:#241b3a; }
@@ -59,10 +59,12 @@
   .warn { color:var(--amber); }
   .empty { color:var(--muted); padding:30px 0; text-align:center; }
   .tap { text-align:right; font-size:11px; color:var(--dim); margin-top:6px; }
+  .rchip { font-size:10px; font-weight:800; letter-spacing:.4px; padding:2px 6px; border-radius:5px; margin-left:6px; vertical-align:2px; }
+  .r-R1 { background:#14283f; color:#7fb8ff; } .r-R2 { background:#2a2412; color:#e7c46a; }
 </style>
 </head>
 <body>
-<header><h1>R1 alerts</h1><div class="upd" id="upd">loading…</div></header>
+<header><h1>Pons alerts</h1><div class="upd" id="upd">loading…</div></header>
 <div class="tiles" id="tiles"></div>
 <details class="rule"><summary>What this is</summary><div id="rule"></div></details>
 <div class="filters" id="filters"></div>
@@ -113,10 +115,10 @@ function render() {
      <div class="tile g"><div class="n">${s.n_hit ?? 0}</div><div class="l">hit 3x</div></div>
      <div class="tile r"><div class="n">${s.n_dead ?? 0}</div><div class="l">dead</div></div>
      <div class="tile ${(s.mark_per_100 ?? 100) >= 100 ? "g" : "a"}"><div class="n">${mk}</div><div class="l">per $100 now</div></div>`;
-  document.getElementById("rule").innerHTML = `<p><b>Rule.</b> ${esc(data.rule)}</p><p><b>Track record.</b> ${esc(data.history)}</p><p><b>Colors.</b> green = hit 3x (rule sold), blue = open and above entry, amber = open and below entry, grey = dead or expired, violet = a Track 7 breakout is happening right now (information, not a validated signal).</p><p>"per $100 now" marks every filled alert at its current price (3x hits counted at $300): ${s.n_r1} alerts of ${s.n_live} live crossings so far.</p>`;
-  const counts = { ALL: a.length, OPEN: a.filter(x => x.status === "OPEN" && !x.dead).length, "HIT 3X": a.filter(x => x.status === "TARGET HIT").length, BREAKOUT: a.filter(x => x.breakout).length, DEAD: a.filter(x => x.dead).length, OTHER: a.filter(x => ["EXPIRED", "NO ENTRY"].includes(x.status)).length };
+  document.getElementById("rule").innerHTML = `<p><b>Rule.</b> ${esc(data.rule)}</p><p><b>Track record.</b> ${esc(data.history)}</p><p><b>Colors.</b> green = hit 3x (rule sold), blue = open and above entry, amber = open and below entry, grey = dead or expired, violet = a Track 7 breakout is happening right now (information, not a validated signal).</p><p>"per $100 now" marks every filled alert at its current price (3x hits counted at $300): ${s.n_r1} alerts of ${s.n_live} live crossings so far.</p>${s.by_rule ? `<p><b>By rule.</b> ` + Object.keys(s.by_rule).map(r => `${r}: ${s.by_rule[r].n} alerts, ${s.by_rule[r].n_fill} filled, ${s.by_rule[r].n_hit} hit 3x, $${Math.round(s.by_rule[r].mark)} per $100 now`).join(" · ") + `</p>` : ""}`;
+  const counts = { ALL: a.length, R1: a.filter(x => (x.rules || []).includes("R1")).length, R2: a.filter(x => (x.rules || []).includes("R2")).length, OPEN: a.filter(x => x.status === "OPEN" && !x.dead).length, "HIT 3X": a.filter(x => x.status === "TARGET HIT").length, BREAKOUT: a.filter(x => x.breakout).length, DEAD: a.filter(x => x.dead).length, OTHER: a.filter(x => ["EXPIRED", "NO ENTRY"].includes(x.status)).length };
   document.getElementById("filters").innerHTML = Object.keys(counts).map(k => `<button class="${filter === k ? "on" : ""}" onclick="filter='${k}';render()">${k.toLowerCase()} ${counts[k]}</button>`).join("");
-  const sel = a.filter(x => filter === "ALL" || (filter === "OPEN" && x.status === "OPEN" && !x.dead) || (filter === "HIT 3X" && x.status === "TARGET HIT") || (filter === "BREAKOUT" && x.breakout) || (filter === "DEAD" && x.dead) || (filter === "OTHER" && ["EXPIRED", "NO ENTRY"].includes(x.status)));
+  const sel = a.filter(x => filter === "ALL" || (filter === "R1" && (x.rules || []).includes("R1")) || (filter === "R2" && (x.rules || []).includes("R2")) || (filter === "OPEN" && x.status === "OPEN" && !x.dead) || (filter === "HIT 3X" && x.status === "TARGET HIT") || (filter === "BREAKOUT" && x.breakout) || (filter === "DEAD" && x.dead) || (filter === "OTHER" && ["EXPIRED", "NO ENTRY"].includes(x.status)));
   const order = { breakout: 0, up: 1, down: 2, hit: 3, exp: 4, dead: 5, none: 6 };
   sel.sort((p, q) => (order[kind(p)] - order[kind(q)]) || (q.alert_ts - p.alert_ts));
   document.getElementById("list").innerHTML = sel.length ? sel.map(card).join("") : '<div class="empty">nothing here</div>';
@@ -143,10 +145,10 @@ function card(x) {
   const peak = hit ? ` · now ${m == null ? "—" : m.toFixed(2) + "x"} (after the sale)` : x.peak_mult == null ? "" : ` · peak ${x.peak_mult.toFixed(2)}x`;
   const when = x.status === "OPEN" ? `deadline in <b>${left(x.deadline_ts)}</b>` : x.status === "TARGET HIT" ? `<b>sold at 3x</b>` : x.status === "EXPIRED" ? `<b>sold at deadline</b>` : `no entry`;
   const watch = x.watch ? `<div class="watch ${x.breakout ? "" : "dim"}">${esc(x.watch)}</div>` : "";
-  const why = [`graduated in ${x.grad_min == null ? "?" : Math.round(x.grad_min)} min`, `launched ${x.launch_hour == null ? "?" : x.launch_hour + ":00"} LA`, `crossed $100k at ${money(x.cross_mcap)}`, `alert lag ${x.lag_s == null ? "?" : Math.round(x.lag_s) + " s"}`, `${x.prior_launches ?? "?"} prior launches by deployer`, `pool depth ${money(x.depth_usd)}`, `last trade ${x.idle_h == null ? "?" : x.idle_h < 1 ? Math.round(x.idle_h * 60) + " min ago" : x.idle_h.toFixed(1) + " h ago"}`];
+  const why = [(x.rules || []).includes("R2") ? `slow burner: reached $100k ${x.slow_days == null ? "?" : x.slow_days.toFixed(1)} d after graduating` : `reached $100k ${x.slow_days == null ? "?" : (x.slow_days * 24).toFixed(1)} h after graduating`, `graduated in ${x.grad_min == null ? "?" : Math.round(x.grad_min)} min`, `launched ${x.launch_hour == null ? "?" : x.launch_hour + ":00"} LA`, `crossed $100k at ${money(x.cross_mcap)}`, `alert lag ${x.lag_s == null ? "?" : Math.round(x.lag_s) + " s"}`, `${x.prior_launches ?? "?"} prior launches by deployer`, `pool depth ${money(x.depth_usd)}`, `last trade ${x.idle_h == null ? "?" : x.idle_h < 1 ? Math.round(x.idle_h * 60) + " min ago" : x.idle_h.toFixed(1) + " h ago"}`];
   const chart = charts[id] ? `<div class="chart"><iframe src="https://dexscreener.com/robinhood/${id}?embed=1&theme=dark&info=0" loading="lazy"></iframe></div>` : "";
   return `<div class="card ${k} ${opened[id] ? "open" : ""}" onclick="toggle('${id}')">
-    <div class="row1"><div class="tick">${esc(x.symbol || "?")}<small>${ago(x.alert_ts)}</small></div><span class="badge ${BADGE[k]}">${LABEL[k]}</span></div>
+    <div class="row1"><div class="tick">${esc(x.symbol || "?")}${(x.rules || []).map(r => `<span class="rchip r-${r}">${r}</span>`).join("")}<small>${ago(x.alert_ts)}</small></div><span class="badge ${BADGE[k]}">${LABEL[k]}</span></div>
     <div class="row2"><div>${big}<div class="caps">entry ${money(x.entry_mcap)} → now ${money(x.cur_mcap)}${peak}</div></div>${spark(x)}</div>
     <div class="bar"><i style="width:${(100 * prog).toFixed(1)}%;background:${barCol}"></i><b style="left:33.3%"></b></div>
     <div class="barl"><span>0</span><span>entry</span><span>3x target ${money(x.entry_mcap ? x.entry_mcap * 3 : null)}</span></div>
