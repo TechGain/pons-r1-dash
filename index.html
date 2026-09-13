@@ -69,7 +69,7 @@
 <div id="list"><div class="empty">loading…</div></div>
 <div class="foot" id="foot"></div>
 <script>
-const API = "https://api.github.com/repos/TechGain/pons-r1-dash/contents/alerts.json?ref=main";
+const SOURCES = ["alerts.json", "https://raw.githubusercontent.com/TechGain/pons-r1-dash/main/alerts.json", "https://api.github.com/repos/TechGain/pons-r1-dash/contents/alerts.json?ref=main"];
 let data = null, filter = "ALL", opened = {}, charts = {};
 const LA = "America/Los_Angeles";
 const fmt = (ts) => ts ? new Date(ts * 1000).toLocaleString("en-US", { timeZone: LA, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
@@ -78,13 +78,20 @@ function ago(ts) { if (!ts) return ""; const s = Math.max(0, Date.now() / 1000 -
 function left(ts) { const s = ts - Date.now() / 1000; if (s <= 0) return "passed"; if (s < 3600) return Math.round(s / 60) + " min"; return (s / 3600).toFixed(1) + " h"; }
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 async function load() {
-  try {
-    const r = await fetch(API, { cache: "no-store" });
-    if (!r.ok) throw 0;
-    const j = await r.json();
-    data = JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g, "")))));
-    render();
-  } catch (e) { document.getElementById("upd").textContent = "could not load data"; }
+  let payload = null, err = "";
+  for (const src of SOURCES) {
+    try {
+      const r = await fetch(src + (src.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) { err = src + " " + r.status; continue; }
+      const j = await r.json();
+      payload = j.content ? JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/
+/g, ""))))) : j;
+      if (payload && payload.alerts) break;
+      payload = null;
+    } catch (e) { err = src + " " + e; }
+  }
+  if (!payload) { document.getElementById("upd").textContent = "could not load data (" + err.slice(0, 60) + ")"; return; }
+  if (!data || payload.generated_ts >= data.generated_ts) { data = payload; render(); }
 }
 function kind(x) {
   if (x.breakout) return "breakout";
@@ -154,7 +161,7 @@ function card(x) {
   </div>`;
 }
 function toggle(id) { opened[id] = !opened[id]; render(); }
-load(); setInterval(load, 60000);
+load(); setInterval(load, 90000);
 </script>
 </body>
 </html>
