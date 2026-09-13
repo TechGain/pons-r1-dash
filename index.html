@@ -101,8 +101,9 @@ function render() {
   document.getElementById("upd").textContent = "updated " + ago(data.generated_ts);
   const wr = s.hit_rate == null ? "—" : Math.round(100 * s.hit_rate) + "%";
   const mk = s.mark_per_100 == null ? "—" : "$" + Math.round(s.mark_per_100);
+  const alive = a.filter(x => x.status === "OPEN" && !x.dead).length;
   document.getElementById("tiles").innerHTML =
-    `<div class="tile b"><div class="n">${s.n_open ?? 0}</div><div class="l">open</div></div>
+    `<div class="tile b"><div class="n">${alive}</div><div class="l">open · alive</div></div>
      <div class="tile g"><div class="n">${s.n_hit ?? 0}</div><div class="l">hit 3x</div></div>
      <div class="tile r"><div class="n">${s.n_dead ?? 0}</div><div class="l">dead</div></div>
      <div class="tile ${(s.mark_per_100 ?? 100) >= 100 ? "g" : "a"}"><div class="n">${mk}</div><div class="l">per $100 now</div></div>`;
@@ -110,7 +111,7 @@ function render() {
   const counts = { ALL: a.length, OPEN: a.filter(x => x.status === "OPEN" && !x.dead).length, "HIT 3X": a.filter(x => x.status === "TARGET HIT").length, BREAKOUT: a.filter(x => x.breakout).length, DEAD: a.filter(x => x.dead).length, OTHER: a.filter(x => ["EXPIRED", "NO ENTRY"].includes(x.status)).length };
   document.getElementById("filters").innerHTML = Object.keys(counts).map(k => `<button class="${filter === k ? "on" : ""}" onclick="filter='${k}';render()">${k.toLowerCase()} ${counts[k]}</button>`).join("");
   const sel = a.filter(x => filter === "ALL" || (filter === "OPEN" && x.status === "OPEN" && !x.dead) || (filter === "HIT 3X" && x.status === "TARGET HIT") || (filter === "BREAKOUT" && x.breakout) || (filter === "DEAD" && x.dead) || (filter === "OTHER" && ["EXPIRED", "NO ENTRY"].includes(x.status)));
-  const order = { breakout: 0, up: 1, hit: 2, down: 3, exp: 4, dead: 5, none: 6 };
+  const order = { breakout: 0, up: 1, down: 2, hit: 3, exp: 4, dead: 5, none: 6 };
   sel.sort((p, q) => (order[kind(p)] - order[kind(q)]) || (q.alert_ts - p.alert_ts));
   document.getElementById("list").innerHTML = sel.length ? sel.map(card).join("") : '<div class="empty">nothing here</div>';
   const stale = data.generated_ts && Date.now() / 1000 - data.generated_ts > 600;
@@ -129,10 +130,11 @@ function spark(x) {
 }
 function card(x) {
   const k = kind(x), m = x.mult, id = x.token;
-  const big = m == null ? `<div class="big flat">—</div>` : `<div class="big ${m >= 1.02 ? "pos" : m <= 0.98 ? "neg" : "flat"}">${m.toFixed(2)}x<small>vs entry</small></div>`;
-  const prog = Math.max(0, Math.min(1, (m ?? 0) / 3));
+  const hit = x.status === "TARGET HIT";
+  const big = hit ? `<div class="big pos">3.0x<small>sold · +$200 per $100</small></div>` : m == null ? `<div class="big flat">—</div>` : `<div class="big ${m >= 1.02 ? "pos" : m <= 0.98 ? "neg" : "flat"}">${m.toFixed(2)}x<small>vs entry</small></div>`;
+  const prog = hit ? 1 : Math.max(0, Math.min(1, (m ?? 0) / 3));
   const barCol = k === "hit" ? "var(--green)" : (m ?? 1) >= 1 ? "var(--blue)" : "var(--amber)";
-  const peak = x.peak_mult == null ? "" : ` · peak ${x.peak_mult.toFixed(2)}x`;
+  const peak = hit ? ` · now ${m == null ? "—" : m.toFixed(2) + "x"} (after the sale)` : x.peak_mult == null ? "" : ` · peak ${x.peak_mult.toFixed(2)}x`;
   const when = x.status === "OPEN" ? `deadline in <b>${left(x.deadline_ts)}</b>` : x.status === "TARGET HIT" ? `<b>sold at 3x</b>` : x.status === "EXPIRED" ? `<b>sold at deadline</b>` : `no entry`;
   const watch = x.watch ? `<div class="watch ${x.breakout ? "" : "dim"}">${esc(x.watch)}</div>` : "";
   const why = [`graduated in ${x.grad_min == null ? "?" : Math.round(x.grad_min)} min`, `launched ${x.launch_hour == null ? "?" : x.launch_hour + ":00"} LA`, `crossed $100k at ${money(x.cross_mcap)}`, `alert lag ${x.lag_s == null ? "?" : Math.round(x.lag_s) + " s"}`, `${x.prior_launches ?? "?"} prior launches by deployer`, `pool depth ${money(x.depth_usd)}`, `last trade ${x.idle_h == null ? "?" : x.idle_h < 1 ? Math.round(x.idle_h * 60) + " min ago" : x.idle_h.toFixed(1) + " h ago"}`];
